@@ -41,7 +41,7 @@ as_user() {
 	if [ $ME == $USERNAME ] ; then
 		bash -c "$1"
 	else
-		su $USERNAME -s /bin/bash -c "$1"
+		su ""$USERNAME"" -s /bin/bash -c "$1"
 	fi
 }
 
@@ -223,7 +223,9 @@ check_backup_settings() {
 	case "$BACKUPFORMAT" in
 		tar)
 			COMPRESSCMD="tar -hcjf"
-			STORECMD="tar -cpf"
+			#Followsymlinks, and don't keep permissions:
+			STORECMD="tar -hcf"
+			#STORECMD="tar -cpf"
 			ARCHIVEENDING=".tar.bz2"
 			STOREDENDING=".tar"
 			EXCLUDEARG="-X "
@@ -313,10 +315,12 @@ mc_whole_backup() {
 	fi
 	if [ "$COMPRESS_WHOLEBACKUP" ]
 	then
-		as_user "$COMPRESSCMD $path/whole-backup$ARCHIVEENDING $MCPATH $exclude"
+		as_user "$COMPRESSCMD $path/whole-backup$ARCHIVEENDING $MCPATH $exclude 2>&1 | grep -v  \"Removing leading\""
 	else
-		as_user "$STORECMD $path/whole-backup$STOREDENDING $MCPATH $exclude"
+		#as_user "$STORECMD $path/whole-backup$STOREDENDING $MCPATH $exclude 2>&1 | grep -v  \"Removing leading\""
+		as_user "$STORECMD $path/whole-backup$STOREDENDING $exclude $MCPATH 2>&1 | grep -v  \"Removing leading\""
 	fi
+	as_user "df -h"
 }
 
 mc_world_backup() {
@@ -336,7 +340,17 @@ mc_world_backup() {
 		echo "Detected that backup script compatibility is enabled, deleting old backups that are not necessary."
 		as_user "rm -r $BACKUPPATH/*"
 	fi
+	if [ "$COMPRESS_WORLDBACKUP" ]
+	# Compress or store backup
+	then
+		BACKUPCMD=$COMPRESSCMD
+		BACKUPENDING=$ARCHIVEENDING
+	else
+		BACKUPCMD=$STORECMD
+		BACKUPENDING=$STOREDENDING
+	fi
 
+	echo "Ending is: $BACKUPENDING - CMD is: $BACKUPCMD"
 	for INDEX in ${!WORLDNAME[@]}
 	do
 		echo "Backing up minecraft ${WORLDNAME[$INDEX]}"
@@ -344,24 +358,49 @@ mc_world_backup() {
 		# If this is set tars will be created compatible to WorldEdit
 		then
 			as_user "mkdir -p $BACKUPPATH/${WORLDNAME[$INDEX]}"
-			path=`datepath $BACKUPPATH/${WORLDNAME[$INDEX]}/ $ARCHIVEENDING $ARCHIVEENDING`
+			path=`datepath $BACKUPPATH/${WORLDNAME[$INDEX]}/ $BACKUPENDING $BACKUPENDING`
 		elif [ "$BACKUPSCRIPTCOMPATIBLE" ]
 		# If is set tars will be put in $BACKUPPATH without any timestamp to be compatible with
 		# [backup rotation script](https://github.com/adamfeuer/rotate-backups)
 		then
-			path=$BACKUPPATH/${WORLDNAME[$INDEX]}$ARCHIVEENDING
+			path=$BACKUPPATH/${WORLDNAME[$INDEX]}$BACKUPENDING
 		else
 			as_user "mkdir -p $BACKUPPATH/${today}"
-			path=`datepath $BACKUPPATH/${today}/${WORLDNAME[$INDEX]}_ $ARCHIVEENDING $ARCHIVEENDING`
+			path=`datepath $BACKUPPATH/${today}/${WORLDNAME[$INDEX]}_ $BACKUPENDING $BACKUPENDING`
 		fi
 		if [ "$WORLDEDITCOMPATIBLE" ]
 		# Don't store the complete path
 		then
-			as_user "cd $MCPATH && $COMPRESSCMD $path ${WORLDNAME[$INDEX]}"
+			as_user "cd $MCPATH && $BACKUPCMD $path ${WORLDNAME[$INDEX]}"
 		else
-			as_user "$COMPRESSCMD $path $MCPATH/${WORLDNAME[$INDEX]}"
+			# echo "Command: $BACKUPCMD $path $MCPATH/${WORLDNAME[$INDEX]} 2>&1 | grep -v  \"Removing leading\""
+			as_user "$BACKUPCMD $path $MCPATH/${WORLDNAME[$INDEX]} 2>&1 | grep -v  \"Removing leading\""
 		fi
 	done
+	#Finally - take a full backup of all plugins with data:
+        echo "Backing up minecraft plugins"
+        if [ "$WORLDEDITCOMPATIBLE" ]
+        # If this is set tars will be created compatible to WorldEdit
+        then
+                as_user "mkdir -p $BACKUPPATH/plugins"
+                path=`datepath $BACKUPPATH/plugins/ $BACKUPENDING $BACKUPENDING`
+        elif [ "$BACKUPSCRIPTCOMPATIBLE" ]
+        # If is set tars will be put in $BACKUPPATH without any timestamp to be compatible with
+        # [backup rotation script](https://github.com/adamfeuer/rotate-backups)
+        then
+                path=$BACKUPPATH/plugins$BACKUPENDING
+        else
+                as_user "mkdir -p $BACKUPPATH/${today}"
+                path=`datepath $BACKUPPATH/${today}/plugins_ $BACKUPENDING $BACKUPENDING`
+        fi
+        if [ "$WORLDEDITCOMPATIBLE" ]
+        # Don't store the complete path
+        then
+                as_user "cd $MCPATH && $BACKUPCMD $path plugins"
+        else
+                # echo "Command: $BACKUPCMD $path $MCPATH/plugins"
+                as_user "$BACKUPCMD $path $MCPATH/plugins 2>&1 | grep -v  \"Removing leading\""
+        fi
 }
 
 check_links() {
@@ -483,11 +522,12 @@ check_update_craftbukkit() {
 check_update_paper() {
 	echo "Checking for update for paper.jar"
 
-	as_user "cd $MCPATH && wget -q -O $MCPATH/paper.jar.update https://papermc.io/api/v1/paper/1.14.3/latest/download"
+	as_user "cd $MCPATH && wget -q -O $MCPATH/paper.jar.update https://papermc.io/api/v1/paper/$PAPER_VERSION/latest/download"
 	if [ -r "$MCPATH/paper.jar.update" ]
 	then
 		if `diff $MCPATH/$PAPER_JAR $MCPATH/paper.jar.update >/dev/null`
 		then
+			as_user "rm $MCPATH/paper.jar.update"
 			echo "You are already running the latest version of paper.jar."
 			return 1
 		else
@@ -543,7 +583,7 @@ mc_update() {
 			fi
 		else
 			echo "Not updating $PAPER_JAR. It's not necessary"
-			as_user "rm $MCPATH/paper.jar.update"
+			#as_user "rm $MCPATH/paper.jar.update"
 		fi
 	fi
 }
@@ -586,9 +626,13 @@ overviewer_start() {
 				echo "Start generating map with Minecraft-Overviewer..."
 				if [ "$OVPATH" == "apt" ]
 				then
-						as_user "overviewer.py --config=$OVCONFIGPATH/$OVCONFIGNAME"
+						as_user "$OVCONFIGPATH/cron-overviewer"
+						#as_user "overviewer.py --config=$OVCONFIGPATH/$OVCONFIGNAME > $OVCONFIGPATH/renderlog.log 2>&1"
+						#sleep 40
+						#as_user "overviewer.py --config=$OVCONFIGPATH/$OVCONFIGNAME --genpoi >> $OVCONFIGPATH/renderlog.log 2>&1"
 				else
-						as_user "python $OVPATH/overviewer.py --config=$OVCONFIGPATH/$OVCONFIGNAME"
+						#as_user "python $OVPATH/overviewer.py --config=$OVCONFIGPATH/$OVCONFIGNAME"
+						as_user "$OVCONFIGPATH/cron-overviewer"
 				fi
 				echo "Map generated."
 		else
@@ -617,9 +661,14 @@ overviewer_copy_worlds() {
 	get_worlds
 	for INDEX in ${!WORLDNAME[@]}
 	do
-		echo "Copying minecraft ${WORLDNAME[$INDEX]}."
-		as_user "mkdir -p $OVBACKUP"
-		as_user "rsync -rt --delete $WORLDSTORAGE/${WORLDNAME[$INDEX]} $OVBACKUP/${WORLDNAME[$INDEX]}"
+		#if [ "$1" == "${WORLDNAME[$INDEX]}" ]
+		if [[ "$1" =~ "${WORLDNAME[$INDEX]}" ]]
+		then
+			echo "Copying minecraft ${WORLDNAME[$INDEX]}."
+			as_user "mkdir -p $OVBACKUP"
+			# as_user "rsync -rt --stats --delete $WORLDSTORAGE/${WORLDNAME[$INDEX]} $OVBACKUP"
+			as_user "rsync -rt --delete $WORLDSTORAGE/${WORLDNAME[$INDEX]} $OVBACKUP"
+		fi
 	done
 }
 
@@ -750,11 +799,15 @@ case "$1" in
 		if is_running; then
 			mc_say "COMPLETE SERVER BACKUP IN 10 SECONDS.";
 			mc_say "WARNING: WILL RESTART SERVER SOFTWARE!"
-			mc_stop
-			to_disk
-			mc_whole_backup
-			check_links
-			mc_start
+                        #mc_stop
+                        as_user "sudo systemctl stop $MCSERVICE.service"
+
+                        to_disk
+                        mc_whole_backup
+                        check_links
+
+                        as_user "sudo systemctl start $MCSERVICE.service"
+                        #mc_start
 		else
 			mc_whole_backup
 		fi
@@ -912,12 +965,13 @@ case "$1" in
 			mc_say "Generating overviewer map."
 			mc_saveoff
 			to_disk
-			overviewer_copy_worlds
+			overviewer_copy_worlds "$2"
 			mc_saveon
-			overviewer_start $2
+			overviewer_start "$2"
+			mc_say "Overviewer map started-finished."
 		else
-			overviewer_copy_worlds
-			overviewer_start $2
+			overviewer_copy_worlds "$2"
+			overviewer_start "$2"
 		fi
 		;;
 	screen)
