@@ -424,7 +424,7 @@ to_disk() {
 }
 
 check_update_vanilla() {
-	MC_SERVER_URL=`wget -q -O - http://minecraft.net/download | grep minecraft_server.jar\ | cut -d \" -f 6`
+	MC_SERVER_URL=`wget -q -O - https://www.minecraft.net/en-us/download/server/ | grep server.jar | cut -d \" -f 2`
 
 	echo "Checking for update for minecraft_server.jar (Vanilla)"
 	as_user "cd $MCPATH && wget -q -O $MCPATH/minecraft_server.jar.update $MC_SERVER_URL"
@@ -480,6 +480,25 @@ check_update_craftbukkit() {
 	fi
 }
 
+check_update_paper() {
+	echo "Checking for update for paper.jar"
+
+	as_user "cd $MCPATH && wget -q -O $MCPATH/paper.jar.update https://papermc.io/api/v1/paper/1.14.3/latest/download"
+	if [ -r "$MCPATH/paper.jar.update" ]
+	then
+		if `diff $MCPATH/$PAPER_JAR $MCPATH/paper.jar.update >/dev/null`
+		then
+			echo "You are already running the latest version of paper.jar."
+			return 1
+		else
+			echo "Update of $PAPER_JAR is needed."
+			return 0
+		fi
+	else
+		echo "Something went wrong. Couldn't download paper.jar"
+	fi
+}
+
 mc_update() {
 	if is_running
 	then
@@ -511,6 +530,20 @@ mc_update() {
 		else
 			echo "Not updating $CB_JAR. It's not necessary"
 			as_user "rm $MCPATH/craftbukkit.jar.update"
+		fi
+
+		if check_update_paper
+		then
+			if [ -r "$MCPATH/paper.jar.update" ]
+			then
+				as_user "mv $MCPATH/paper.jar.update $MCPATH/$PAPER_JAR"
+				echo "Thats it. Update of $PAPER_JAR done."
+			else
+				echo "Something went wrong. Couldn't replace your original $PAPER_JAR with paper.jar.update"
+			fi
+		else
+			echo "Not updating $PAPER_JAR. It's not necessary"
+			as_user "rm $MCPATH/paper.jar.update"
 		fi
 	fi
 }

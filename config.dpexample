@@ -8,28 +8,28 @@
 #
 
 # Name of vanilla server jar (no need to change if you're running craftbukkit and vice versa)
-MC_JAR="minecraft_server.jar"
+MC_JAR="server.jar"
 
 # Name of craftbukkit jar 
 CB_JAR="craftbukkit.jar"
 
-# Define the release of CraftBukkit to use (stable or unstable)
-CB_RELEASE="stable"
-
 #Name of paper jar
 PAPER_JAR="paper.jar"
 
-# Name of server.jar to use (either $MC_JAR, $CB_JAR or $PAPER_JAR)
+# Define the release of CraftBukkit to use (stable or unstable)
+CB_RELEASE="stable"
+
+# Name of server.jar to use (either $MC_JAR, $CB_JAR, $PAPER_JAR)
 SERVICE=$PAPER_JAR
 
 # Name to use for the screen instance
-SCREEN="server_screen"
+SCREEN="minecraftserver"
 
 # User that should run the server
 USERNAME="minecraft"
 
 # Path to minecraft server directory 
-MCPATH="/home/${USERNAME}/minecraft"
+MCPATH="/home/${USERNAME}/minecraft19"
 
 # Path to server log file ($MCPATH/server.log on older versions)
 SERVERLOG="${MCPATH}/logs/latest.log"
@@ -40,15 +40,17 @@ SERVERLOG="${MCPATH}/logs/latest.log"
 WORLDSTORAGE="${MCPATH}/worlds"
 
 # Number of CPUs/cores to use
-CPU_COUNT=2
+CPU_COUNT=6
+
+OPTIONS="nogui"
 
 # Initial memory usage
-INITMEM="2048M"
+INITMEM="8192M"
 
 # Maximum amount of memory to use
 # Remember: give the ramdisk enough space, subtract from the total amount
 # of RAM available the size of your map and the RAM-consumption of your base system.
-MAXMEM="2048M"
+MAXMEM="10240M"
 
 # Whether to output commands for the plugin ConsoleLikeChat ($1 is the command to run)
 FORMAT='$1'
@@ -73,7 +75,7 @@ BACKUPFORMAT="tar"
 # in $BACKUPPATH without timestamp to be compatible with
 # [backup rotation script](https://github.com/adamfeuer/rotate-backups)
 #
-BACKUPSCRIPTCOMPATIBLE=YES
+#BACKUPSCRIPTCOMPATIBLE=YES
 
 # If WORLDEDITCOMPATIBLE is set the world backups will be created compatible to WorldEdit
 # in $BACKUPPATH as WORLD_NAME/DATE.(tar.bz2|zip) with the requested directory structure
@@ -127,7 +129,15 @@ OVBACKUP="/home/${USERNAME}/mc-overviewer/overviewerbackups"
 # Things to leave alone ;)
 # =====================
 
-INVOCATION="java -Xmx$MAXMEM -Xms$INITMEM -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalPacing -XX:ParallelGCThreads=$CPU_COUNT -XX:+AggressiveOpts -jar $SERVICE nogui"
+#INVOCATION="java -Xmx$MAXMEM -Xms$INITMEM -XX:+UseConcMarkSweepGC -XX:+CMSIncrementalPacing -XX:ParallelGCThreads=$CPU_COUNT -XX:+AggressiveOpts -jar $SERVICE nogui"
+
+INVOCATION="java -Xmx$MAXMEM -Xms$INITMEM \
+-XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:MaxGCPauseMillis=100 \
+-XX:+DisableExplicitGC -XX:TargetSurvivorRatio=90 -XX:G1NewSizePercent=50 \
+-XX:G1MaxNewSizePercent=80 -XX:G1MixedGCLiveThresholdPercent=50 -XX:+AlwaysPreTouch \
+-XX:+ParallelRefProcEnabled -Dusing.aikars.flags=mcflags.emc.gs \
+-Djline.terminal=jline.UnsupportedTerminal -jar $SERVICE $OPTIONS"
+
 
 # Path to the the mounted ramdisk (the default will work in most senarios).
 RAMDISK="/dev/shm"
